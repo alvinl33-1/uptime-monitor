@@ -8,18 +8,28 @@ from db import get_db
 from main import app
 from models import Base
 
+
 @pytest.fixture
-def client():
+def session_factory():
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
-    TestSession = sessionmaker(bind=engine)
+    return sessionmaker(bind=engine)
 
+
+@pytest.fixture
+def db_session(session_factory):
+    with session_factory() as session:
+        yield session
+
+
+@pytest.fixture
+def client(session_factory):
     def override_get_db():
-        with TestSession() as session:
+        with session_factory() as session:
             yield session
 
     app.dependency_overrides[get_db] = override_get_db

@@ -12,6 +12,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
   
   api:
     build: ./backend
@@ -19,14 +27,44 @@ services:
       - "8000:8000"
     environment:
       DATABASE_URL: postgresql+psycopg://monitor:${POSTGRES_PASSWORD}@db:5432/uptimemonitor
+      REDIS_URL: redis://redis:6379/0?socket_timeout=15
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 3s
       retries: 5
+
+
+  scheduler:
+    build: ./backend
+    command: ["python", "scheduler.py"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://monitor:${POSTGRES_PASSWORD}@db:5432/uptimemonitor
+      REDIS_URL: redis://redis:6379/0?socket_timeout=15
+    depends_on:
+      api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: ./backend
+    command: ["python", "worker.py"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://monitor:${POSTGRES_PASSWORD}@db:5432/uptimemonitor
+      REDIS_URL: redis://redis:6379/0?socket_timeout=15
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   db-data:

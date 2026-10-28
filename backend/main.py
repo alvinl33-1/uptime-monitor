@@ -1,11 +1,14 @@
-from fastapi import Depends, FastAPI, HTTPException
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 from contextlib import asynccontextmanager
 from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException, Query
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
 from db import engine, get_db
-from models import Base, Monitor
+from models import Base, Monitor, Check
+from checker import check_url
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,6 +38,18 @@ class MonitorOut(BaseModel):
     url: str
     interval_seconds: int
     created_at: datetime
+
+
+class CheckOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    monitor_id: int
+    status: str
+    status_code: int | None
+    response_time_ms: int
+    error: str | None
+    checked_at: datetime
 
 
 @app.get("/health")
@@ -83,3 +98,33 @@ def delete_monitor(monitor_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Monitor not found")
     db.delete(monitor)
     db.commit()
+
+
+
+@app.post("/monitors/{monitor_id}/check", response_model=CheckOut, status_code=201)
+def run_check(monitor_id: int, db: Session = Depends(get_db)):
+    monitor = db.get(Monitor, monitor_id)
+
+    if monitor is None:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+
+    result = check_url(monitor.url)
+
+    check = Check(monitor_id=monitor.id, **result)
+    db.add(check)
+    db.commit()
+    db.refresh(check)
+    return check
+
+
+@app.get("/monitors/{monitor_id}/checks", response_model=list[CheckOut])
+def list_checks(monitor_id: int, limit: int = Query(default=20, ge=1, le=100), db: Session = Depends(get_db)):
+    if (db.get(Monitor, monitor_id) is None):
+        raise HTTPException(status_code=404, detail="Monitor not found")
+    return (
+        db.query(Check)
+        .filter(Check.monitor_id == monitor_id)
+        .order_by(Check.checked_at.desc(), Check.id.desc())
+        .limit(limit)
+        .all()
+    )
