@@ -1,7 +1,7 @@
 import fakeredis
 import pytest
 
-import jobs
+from app import jobs
 
 
 @pytest.fixture(autouse=True)

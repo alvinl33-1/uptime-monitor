@@ -2,8 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import incidents
-from models import Check, Incident, Monitor
+from app import incidents
+from app.models import Check, Incident, Monitor
 
 NOW = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 

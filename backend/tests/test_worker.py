@@ -1,8 +1,7 @@
 import fakeredis
 
-import jobs
-import worker
-from models import Monitor
+from app import jobs, worker
+from app.models import Monitor
 
 
 def test_process_next_job_saves_check(

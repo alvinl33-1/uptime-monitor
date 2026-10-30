@@ -42,7 +42,7 @@ services:
 
   scheduler:
     build: ./backend
-    command: ["python", "scheduler.py"]
+    command: ["python", "-m", "app.scheduler"]
     environment:
       DATABASE_URL: postgresql+psycopg://monitor:${POSTGRES_PASSWORD}@db:5432/uptimemonitor
       REDIS_URL: redis://redis:6379/0?socket_timeout=15
@@ -55,7 +55,7 @@ services:
 
   worker:
     build: ./backend
-    command: ["python", "worker.py"]
+    command: ["python", "-m", "app.worker"]
     environment:
       DATABASE_URL: postgresql+psycopg://monitor:${POSTGRES_PASSWORD}@db:5432/uptimemonitor
       REDIS_URL: redis://redis:6379/0?socket_timeout=15

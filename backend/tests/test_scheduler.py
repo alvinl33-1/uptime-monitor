@@ -3,9 +3,8 @@ from datetime import datetime, timedelta, timezone
 import fakeredis
 import pytest
 
-import jobs
-import scheduler
-from models import Check, Monitor
+from app import jobs, scheduler
+from app.models import Check, Monitor
 
 NOW = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 

@@ -1,4 +1,4 @@
-import main
+from app import main
 
 VALID = {"name": "example site", "url": "https://example.com"}
 

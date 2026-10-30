@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from models import Incident, Monitor
+from app.models import Incident, Monitor
 
 NOW = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 

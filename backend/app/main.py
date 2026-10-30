@@ -6,9 +6,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from db import engine, get_db
-from models import Base, Incident, Monitor, Check
-from checker import check_url
+from .db import engine, get_db
+from .models import Base, Incident, Monitor, Check
+from .checker import check_url
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

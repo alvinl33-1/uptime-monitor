@@ -3,7 +3,7 @@ import socket
 import httpx
 import pytest
 
-import checker
+from app import checker
 
 
 def fake_site(status):

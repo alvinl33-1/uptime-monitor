@@ -5,9 +5,9 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-import jobs
-from db import SessionLocal
-from models import Check, Monitor
+from . import jobs
+from .db import SessionLocal
+from .models import Check, Monitor
 
 log = logging.getLogger("scheduler")
 

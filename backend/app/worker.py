@@ -2,10 +2,10 @@ import logging
 import signal
 from collections.abc import Callable
 
-import jobs
-from checker import check_url
-from db import SessionLocal
-from models import Check, Monitor
+from . import jobs
+from .checker import check_url
+from .db import SessionLocal
+from .models import Check, Monitor
 
 log = logging.getLogger("worker")
 

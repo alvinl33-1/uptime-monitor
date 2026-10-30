@@ -1,7 +1,7 @@
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from models import Check, Incident
+from .models import Check, Incident
 
 FAILURE_THRESHOLD = 3
 
