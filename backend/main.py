@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from db import engine, get_db
-from models import Base, Monitor, Check
+from models import Base, Incident, Monitor, Check
 from checker import check_url
 
 @asynccontextmanager
@@ -50,6 +50,34 @@ class CheckOut(BaseModel):
     response_time_ms: int
     error: str | None
     checked_at: datetime
+
+
+class IncidentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    monitor_id: int
+    started_at: datetime
+    resolved_at: datetime | None
+
+
+def query_incidents(
+    db: Session,
+    monitor_id: int | None = None,
+    open_only: bool = False,
+    limit: int = 20,
+) -> list[Incident]:
+    query = db.query(Incident)
+    if monitor_id is not None:
+        query = query.filter(Incident.monitor_id == monitor_id)
+    if open_only:
+        query = query.filter(Incident.resolved_at.is_(None))
+    return (
+        query
+        .order_by(Incident.started_at.desc(), Incident.id.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 @app.get("/health")
@@ -127,4 +155,32 @@ def list_checks(monitor_id: int, limit: int = Query(default=20, ge=1, le=100), d
         .order_by(Check.checked_at.desc(), Check.id.desc())
         .limit(limit)
         .all()
+    )
+
+
+
+
+@app.get("/incidents", response_model=list[IncidentOut])
+def list_incidents(
+    open_only: bool = False,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return query_incidents(db, open_only=open_only, limit=limit)
+
+
+@app.get("/monitors/{monitor_id}/incidents", response_model=list[IncidentOut])
+def list_monitor_incidents(
+    monitor_id: int,
+    open_only: bool = False,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    if db.get(Monitor, monitor_id) is None:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+    return query_incidents(
+        db,
+        monitor_id=monitor_id,
+        open_only=open_only,
+        limit=limit,
     )

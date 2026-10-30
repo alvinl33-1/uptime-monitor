@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, String, ForeignKey, Index
+from sqlalchemy import DateTime, String, ForeignKey, Index, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
@@ -21,6 +21,9 @@ class Monitor(Base):
     checks: Mapped[list["Check"]] = relationship(
         back_populates="monitor", cascade="all, delete-orphan"
     )
+    incidents: Mapped[list["Incident"]] = relationship(
+        back_populates="monitor", cascade="all, delete-orphan"
+    )
 
 class Check(Base):
     __tablename__ = "checks"
@@ -36,3 +39,23 @@ class Check(Base):
         DateTime(timezone=True), default=utcnow
     )
     monitor: Mapped["Monitor"] = relationship(back_populates="checks")
+
+class Incident(Base):
+    __tablename__ = "incidents"
+    __table_args__ = (
+        Index(
+            "uq_one_open_incident_per_monitor",
+            "monitor_id",
+            unique=True,
+            postgresql_where=text("resolved_at IS NULL"),
+            sqlite_where=text("resolved_at IS NULL")
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    monitor_id: Mapped[int] = mapped_column(ForeignKey("monitors.id"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    opened_alert_at: Mapped[datetime| None] = mapped_column(DateTime(timezone=True))
+    resolved_alert_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    monitor: Mapped["Monitor"] = relationship(back_populates="incidents")
