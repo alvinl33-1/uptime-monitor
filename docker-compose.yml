@@ -46,6 +46,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://monitor:${POSTGRES_PASSWORD}@db:5432/uptimemonitor
       REDIS_URL: redis://redis:6379/0?socket_timeout=15
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_ALLOW_PRIVATE: ${ALERT_ALLOW_PRIVATE:-false}
     depends_on:
       api:
         condition: service_healthy
@@ -59,12 +61,20 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://monitor:${POSTGRES_PASSWORD}@db:5432/uptimemonitor
       REDIS_URL: redis://redis:6379/0?socket_timeout=15
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_ALLOW_PRIVATE: ${ALERT_ALLOW_PRIVATE:-false}
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+
+
+  webhook-receiver:
+    build: ./backend
+    command: ["python", "dev_receiver.py"]
+    profiles: ["dev"]
 
 volumes:
   db-data:
