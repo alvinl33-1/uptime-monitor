@@ -1,4 +1,5 @@
 import pytest
+import fakeredis
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -7,7 +8,13 @@ from sqlalchemy.pool import StaticPool
 from app.db import get_db
 from app.main import app
 from app.models import Base
+from app import jobs
 
+@pytest.fixture(autouse=True)
+def fake_redis(monkeypatch):
+    fake = fakeredis.FakeRedis(decode_responses=True)
+    monkeypatch.setattr(jobs, "get_redis", lambda: fake)
+    return fake
 
 @pytest.fixture
 def session_factory():

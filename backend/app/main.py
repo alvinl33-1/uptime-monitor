@@ -2,13 +2,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Query
-from sqlalchemy import text
+from fastapi.responses import JSONResponse
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .db import engine, get_db
 from .models import Base, Incident, Monitor, Check
 from .checker import check_url
+from . import statuspage
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -67,17 +69,16 @@ def query_incidents(
     open_only: bool = False,
     limit: int = 20,
 ) -> list[Incident]:
-    query = db.query(Incident)
+    query = select(Incident)
     if monitor_id is not None:
-        query = query.filter(Incident.monitor_id == monitor_id)
+        query = query.where(Incident.monitor_id == monitor_id)
     if open_only:
-        query = query.filter(Incident.resolved_at.is_(None))
-    return (
+        query = query.where(Incident.resolved_at.is_(None))
+    return db.scalars(
         query
         .order_by(Incident.started_at.desc(), Incident.id.desc())
         .limit(limit)
-        .all()
-    )
+    ).all()
 
 
 @app.get("/health")
@@ -104,6 +105,7 @@ def create_monitor(data: MonitorCreate, db: Session = Depends(get_db)):
     db.add(monitor)
     db.commit()
     db.refresh(monitor)
+    statuspage.invalidate()
     return monitor
 
 @app.get("/monitors", response_model=list[MonitorOut])
@@ -126,6 +128,7 @@ def delete_monitor(monitor_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Monitor not found")
     db.delete(monitor)
     db.commit()
+    statuspage.invalidate()
 
 
 
@@ -158,6 +161,16 @@ def list_checks(monitor_id: int, limit: int = Query(default=20, ge=1, le=100), d
     )
 
 
+@app.get("/status")
+def get_status(db: Session = Depends(get_db)):
+    data, cache_state = statuspage.get_status(db)
+    return JSONResponse(
+        content=data,
+        headers={
+            "X-Cache": cache_state,
+            "Cache-Control": "public, max-age=10",
+        },
+    )
 
 
 @app.get("/incidents", response_model=list[IncidentOut])

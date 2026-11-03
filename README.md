@@ -45,6 +45,7 @@ flowchart LR
 | `db` | PostgreSQL 17 with a named volume |
 | `redis` | Job queue and scheduling guard keys |
 
+
 The API, scheduler, and worker share one codebase and one Docker image. Only the start command differs.
 
 ### Data model
@@ -154,27 +155,6 @@ They cover the API, the checker (including the safety rules), the queue, the sch
 - [ ] Observability with Prometheus and Grafana
 - [ ] Hardening: TLS, secrets management, backups, rate limiting
 
-## Project layout
-
-```
-.
-├── backend/
-│   ├── main.py          # API endpoints
-│   ├── models.py        # SQLAlchemy tables
-│   ├── db.py            # database connection
-│   ├── checker.py       # safe URL checker
-│   ├── jobs.py          # Redis queue helpers
-│   ├── scheduler.py     # scheduler service
-│   ├── worker.py        # worker service
-│   ├── incidents.py     # incident open/resolve rules
-│   ├── test_*.py        # tests
-│   └── Dockerfile
-├── docs/
-│   └── learning-log.md
-├── docker-compose.yml
-├── .env.example
-└── README.md
-```
 
 ## Tech stack
 
