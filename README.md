@@ -71,8 +71,6 @@ docker compose ps
 
 Wait until the services report `healthy`, then open the interactive API docs at **http://127.0.0.1:8000/docs**.
 
-### Try it
-
 1. In `/docs`, use **POST /monitors** to add `{"name": "Example", "url": "https://example.com", "interval_seconds": 30}`.
 2. Watch it work: `docker compose logs -f scheduler worker`
 3. See results at `GET /monitors/1/checks`.
