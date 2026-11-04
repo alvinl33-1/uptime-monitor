@@ -1,122 +1,44 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { overallLabel } from "./api";
+import { useStatus } from "./useStatus";
 
+/**
+ * Spec:
+ * - Call useStatus() to get { data, error, loading }.
+ * - Always render <main> with an <h1>Uptime Monitor</h1>.
+ * - If loading and there's no data yet: show "Loading…".
+ * - If there's an error and no data: show "Could not load status."
+ * - If there's data: show
+ *     * the headline from overallLabel(data.overall) in an <h2>
+ *     * a line like "3 monitors, 1 open incident" (use correct singular
+ *       and plural: "1 monitor", "2 monitors", "0 open incidents")
+ * - If there's BOTH data and an error (a refresh failed): still show the
+ *   data, plus a small note: "Showing the last known status. Refresh failed."
+ * - No styling yet. Plain HTML elements only.
+ */
 function App() {
-  const [count, setCount] = useState(0)
+  const { data, error, loading } = useStatus();
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
+    <main>
+      <h1>Uptime Monitor</h1>
+      {loading && !data && <p>Loading…</p>}
+      {!loading && error && !data && <p>Could not load status.</p>}
+      {data && (
+        <>
+          <h2>{overallLabel(data.overall)}</h2>
           <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
+            {data.monitors.length}{" "}
+            {data.monitors.length === 1 ? "monitor" : "monitors"},{" "}
+            {data.open_incidents.length} open{" "}
+            {data.open_incidents.length === 1 ? "incident" : "incidents"}
           </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+          {error && (
+            <small>Showing the last known status. Refresh failed.</small>
+          )}
+        </>
+      )}
+    </main>
+  );
 }
 
-export default App
+export default App;
