@@ -1,159 +1,178 @@
 # Uptime Monitor
 
-A small, self-hosted service that watches websites for you. Register a URL and it checks the site on a schedule, records whether it responded and how fast, and opens an **incident** when the site fails several checks in a row.
-
-Built as a hands-on project to learn microservices, queues, and DevOps fundamentals (Docker, CI/CD, cloud, Kubernetes). It is a learning project, not a production monitoring product.
+A self-hosted website monitoring project built with FastAPI, PostgreSQL, Redis, and React. It includes a monitor management API, a background check queue, incident and webhook support modules, and a read-only public status page. This is a learning project and is not intended as a production monitoring service.
 
 ## Features
 
-- Add, list, and delete monitors through a REST API
-- Automatic checks on a per-monitor interval (30 seconds to 1 hour)
-- Records status, HTTP status code, response time, and error for every check
-- Opens an incident after 3 consecutive failures and resolves it on the first success
-- Scheduler and workers run as separate services, so workers scale independently
-- SSRF protection: the checker refuses private, loopback, and cloud-metadata addresses
-- Health endpoints for the API, database, and Redis
-- Runs entirely with Docker Compose, with automated tests that need no external services
+- Create, list, inspect, and delete monitors through the REST API.
+- Check HTTP and HTTPS URLs on configurable intervals from 30 seconds to 1 hour.
+- Record each check's status, HTTP status code, response time, error, and timestamp.
+- Protect URL checks from requests to private, loopback, and cloud metadata addresses. Checks time out after five seconds and do not follow redirects or read response bodies.
+- Queue checks in Redis and run them in independently scalable worker containers.
+- Provide a cached, read-only status document and a React page that polls it every 30 seconds.
+- Calculate 24-hour uptime and include current monitor states and open incidents in the status document.
+- Include incident evaluation and webhook delivery/retry modules, with unit tests.
+
+> **Implementation note:** Incident evaluation and webhook delivery are implemented as backend modules, but the current worker does not yet call them after saving a check. Automatic incident creation/resolution and webhook delivery are therefore not active in the Compose workflow yet.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    User([User]) -->|REST| API[API<br/>FastAPI]
-    API --> DB[(Postgres)]
-    Sched[Scheduler] -->|find due monitors| DB
-    Sched -->|enqueue job| Redis[(Redis queue)]
-    Redis -->|dequeue job| Worker[Worker x N]
+    Browser([Browser]) -->|:3000| Frontend[React status page / Nginx]
+    Frontend -->|/api/status| API[FastAPI]
+    User([API client]) -->|:8000| API
+    API --> DB[(PostgreSQL)]
+    Scheduler[Scheduler] -->|due checks| DB
+    Scheduler -->|enqueue| Redis[(Redis)]
+    Redis --> Worker[Worker x N]
     Worker -->|safe HTTP check| Sites([Monitored sites])
-    Worker -->|save check, open/close incident| DB
+    Worker -->|save check| DB
 ```
 
-**How a check happens**
-
-1. You create a monitor through the API.
-2. Every 5 seconds the scheduler finds monitors that are due (never checked, or last checked at least `interval_seconds` ago) and pushes a job onto a Redis queue.
-3. A worker takes the job, runs the checker against the site, and saves the result to Postgres.
-4. The worker then evaluates incident rules: three failures in a row open an incident, and one success closes it.
-
-### Services
-
-| Service | Role |
-|---|---|
-| `api` | FastAPI server for managing monitors and reading results |
-| `scheduler` | Finds due monitors and enqueues check jobs |
-| `worker` | Runs checks and saves results; scale with `--scale worker=N` |
-| `db` | PostgreSQL 17 with a named volume |
-| `redis` | Job queue and scheduling guard keys |
-
-
-The API, scheduler, and worker share one codebase and one Docker image. Only the start command differs.
-
-### Data model
-
-- **monitors**: name, URL, check interval
-- **checks**: monitor, status (`up`/`down`), status code, response time, error, timestamp
-- **incidents**: monitor, start time, resolve time (an empty `resolved_at` means the incident is open)
+The API, scheduler, and worker use the same backend image with different start commands. The scheduler polls every five seconds and uses Redis keys to avoid enqueueing the same monitor repeatedly. Workers consume jobs from a Redis list. The frontend's Nginx proxy exposes only `GET /api/status`; monitor management remains available directly through the API on port 8000.
 
 ## Quick start
 
-You need Docker (with Docker Compose) and git.
+Requirements: Docker with the Compose plugin, Git, and OpenSSL.
 
 ```bash
 git clone https://github.com/alvinl33-1/uptime-monitor.git
 cd uptime-monitor
 
-# Create your private settings file with a random database password
-echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" > .env
+# Create a local database password for Compose.
+printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 16)" > .env
 
 docker compose up -d --build
 docker compose ps
 ```
 
-Wait until the services report `healthy`, then open the interactive API docs at **http://127.0.0.1:8000/docs**.
+Open the public status page at <http://127.0.0.1:3000> and the interactive API documentation at <http://127.0.0.1:8000/docs>.
 
-1. In `/docs`, use **POST /monitors** to add `{"name": "Example", "url": "https://example.com", "interval_seconds": 30}`.
-2. Watch it work: `docker compose logs -f scheduler worker`
-3. See results at `GET /monitors/1/checks`.
-4. Add a monitor pointing at `http://localhost:8000` (always blocked, so always "down") and watch an incident open after three failures at `GET /incidents?open_only=true`.
+Create a monitor in `/docs` with `POST /monitors`:
 
-### Scale the workers
+```json
+{
+  "name": "Example",
+  "url": "https://example.com",
+  "interval_seconds": 60
+}
+```
+
+The interval must be between 30 and 3600 seconds. The scheduler will enqueue its first check on a subsequent pass. Follow service output with:
+
+```bash
+docker compose logs -f scheduler worker
+```
+
+## Services and ports
+
+| Service | Purpose | Host access |
+|---|---|---|
+| `frontend` | React status page served by Nginx | `http://127.0.0.1:3000` |
+| `api` | FastAPI monitor, check, incident, health, and status endpoints | `http://127.0.0.1:8000` |
+| `scheduler` | Finds monitors due for a check and enqueues jobs | Internal |
+| `worker` | Checks target URLs and saves results | Internal; can be scaled |
+| `db` | PostgreSQL 17 data store | Internal |
+| `redis` | Job queue and status cache | Internal |
+| `webhook-receiver` | Development-only webhook test receiver | Dev profile only |
+
+Scale workers with:
 
 ```bash
 docker compose up -d --scale worker=3
 docker compose logs -f worker
 ```
 
-Each log line is prefixed with the worker that handled it. Redis hands each job to exactly one worker.
-
-### Stop everything
+Stop the services while keeping database data, or remove the database volume too:
 
 ```bash
-docker compose down        # keeps your data
-docker compose down -v     # also deletes the database volume
+docker compose down
+docker compose down -v
 ```
+
+## Configuration
+
+Compose reads these values from the project `.env` file or the shell environment:
+
+| Variable | Default / requirement | Purpose |
+|---|---|---|
+| `POSTGRES_PASSWORD` | Required | Password for the Compose PostgreSQL user. |
+| `ALERT_WEBHOOK_URL` | Empty | Webhook destination used by the alert module when alert delivery is connected to the check flow. |
+| `ALERT_ALLOW_PRIVATE` | `false` | Allows private webhook destinations when set to `true`; intended for local development. |
+
+The backend also reads `DATABASE_URL` and `REDIS_URL`, which Compose sets for its services. The status cache reads `STATUS_CACHE_SECONDS` (default 15 seconds); it can be set in the backend service environment if needed. Do not commit `.env` or real webhook credentials.
 
 ## API overview
 
+Interactive schemas and examples are available at `/docs`.
+
 | Method | Path | Description |
 |---|---|---|
-| GET | `/health` | API is running |
-| GET | `/health/db` | API can reach Postgres |
-| GET | `/health/redis` | API can reach Redis |
-| POST | `/monitors` | Create a monitor |
-| GET | `/monitors` | List monitors |
-| GET | `/monitors/{id}` | Get one monitor |
-| DELETE | `/monitors/{id}` | Delete a monitor and its history |
-| POST | `/monitors/{id}/check` | Run a check now and save the result |
-| GET | `/monitors/{id}/checks` | Recent checks, newest first (`limit` 1 to 100) |
-| GET | `/incidents` | All incidents, newest first (`open_only`, `limit`) |
-| GET | `/monitors/{id}/incidents` | Incidents for one monitor |
+| `GET` | `/health` | API process health |
+| `GET` | `/health/db` | Database connectivity |
+| `GET` | `/status` | Cached public status document; does not expose monitor URLs |
+| `POST` | `/monitors` | Create a monitor |
+| `GET` | `/monitors` | List monitors |
+| `GET` | `/monitors/{id}` | Get one monitor |
+| `DELETE` | `/monitors/{id}` | Delete a monitor and its checks and incidents |
+| `POST` | `/monitors/{id}/check` | Run and save a check immediately |
+| `GET` | `/monitors/{id}/checks` | List recent checks (`limit` 1–100) |
+| `GET` | `/incidents` | List incidents (`open_only`, `limit`) |
+| `GET` | `/monitors/{id}/incidents` | List incidents for one monitor |
 
-Full request and response schemas are available in the interactive docs at `/docs`.
+The public status document contains the overall state, per-monitor state, 24-hour uptime, latest response time and check time, and currently open incidents. The current frontend displays the overall state and monitor/incident counts, and requests data through its same-origin `/api/status` route. The Nginx configuration returns 404 for other `/api/` paths.
 
-## Running the tests
+## Development and tests
 
-Tests run inside Docker against a throwaway in-memory database and a fake Redis, so they are fast and never touch real data.
+Backend tests use SQLite and fake Redis, so they do not need the Compose database or Redis services:
 
 ```bash
 docker compose build api
 docker compose run --rm --no-deps api pytest
 ```
 
-They cover the API, the checker (including the safety rules), the queue, the scheduler, the worker, and the incident logic.
+Frontend development and checks:
 
-## Design decisions
+```bash
+cd frontend
+npm ci
+npm run dev
+npm test
+npm run build
+npm run lint
+```
 
-- **SSRF protection.** A service that visits user-supplied URLs can be tricked into reaching internal systems. Before every request the checker resolves the hostname and refuses the check unless every resolved address is public. It also uses a 5-second timeout, does not follow redirects, and never reads response bodies.
-- **No duplicate scheduling.** The scheduler sets a Redis key per monitor with `SET NX EX`. Only the first caller succeeds, and the key expires on its own, so a lost job heals itself after one interval.
-- **One open incident per monitor, enforced by the database.** A partial unique index on `incidents` (where `resolved_at IS NULL`) means a race between workers cannot create duplicates.
-- **Bad input cannot crash a worker.** Malformed queue messages are discarded, and exceptions inside the worker loop are logged and retried after a short pause.
-- **Graceful shutdown.** The scheduler and worker handle `SIGTERM`, which is how Kubernetes stops containers.
-- **Config from the environment.** All settings come from environment variables, and secrets stay out of git (`.env` is ignored; `.env.example` holds placeholders only).
+The development webhook receiver can be started with the `dev` Compose profile. The receiver listens on port 9000 inside the Compose network and prints received payloads. It can be made to return HTTP 500 by creating `/tmp/fail` inside its container.
 
-## Known limitations
+## Data model
 
-- A job is lost if a worker dies immediately after taking it from the queue. The next scheduled check covers the gap. A "processing" list would make delivery at-least-once.
-- DNS rebinding is not fully blocked. Closing the gap means connecting directly to the validated IP address.
-- Tables are created at startup rather than through migrations.
-- Redis has no persistent volume, so a Redis restart empties the queue.
-- There is no authentication yet.
+- **Monitors:** name, URL, check interval, and creation time.
+- **Checks:** monitor, `up`/`down` status, status code, response time, error, and check time.
+- **Incidents:** monitor, start and resolution times, and alert-delivery timestamps.
+
+Tables are created at API startup; schema migrations are not configured yet. PostgreSQL data is stored in the `db-data` named volume. Redis has no persistent volume, so queued jobs and cached status are lost when Redis is recreated.
+
+## Current limitations
+
+- The worker currently saves check results but does not invoke incident evaluation or webhook delivery. Those modules are implemented and tested separately.
+- A job can be lost if a worker stops after taking it from Redis; the next scheduled check eventually covers the gap.
+- DNS rebinding is not fully prevented because the connection is not pinned to the validated IP address.
+- The API has no authentication or rate limiting and should not be exposed publicly without additional protections.
+- TLS, production secrets management, database backups, and schema migrations are not configured.
 
 ## Roadmap
 
-- [x] Project setup, Postgres, Docker Compose
-- [x] Monitors API with validation and tests
-- [x] Safe website checker with SSRF protection
-- [x] Redis queue, scheduler, and scalable workers
-- [x] Incidents (open after 3 failures, resolve on recovery)
-- [ ] Webhook alerts, sent exactly once per incident event
-- [ ] Frontend: dashboard and public status page with Redis caching
+- [x] PostgreSQL, Docker Compose, monitor API, and automated tests
+- [x] Safe URL checker and Redis-backed scheduler/worker queue
+- [x] Status API, Redis caching, and React status page
+- [x] Incident rules and webhook alert/retry modules (integration into the worker flow remains)
+- [ ] Connect incident evaluation and webhook retries to check processing
 - [ ] CI with GitHub Actions
 - [ ] Cloud deployment with Terraform
-- [ ] Kubernetes deployment (one Deployment per service)
-- [ ] Observability with Prometheus and Grafana
-- [ ] Hardening: TLS, secrets management, backups, rate limiting
-
+- [ ] Kubernetes deployment and observability
+- [ ] Production hardening: TLS, authentication, secrets, backups, and rate limiting
 
 ## Tech stack
 
-Python, FastAPI, SQLAlchemy, PostgreSQL, Redis, httpx, pytest, Docker, Docker Compose.
+Python 3.14, FastAPI, SQLAlchemy, PostgreSQL 17, Redis 7, httpx, pytest, React 19, TypeScript, Vite, Vitest, Nginx, Docker, and Docker Compose.
