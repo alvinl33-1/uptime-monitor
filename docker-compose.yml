@@ -1,3 +1,4 @@
+# docker-compose.yml (base, core services only)
 services:
   db:
     image: postgres:17
@@ -7,24 +8,32 @@ services:
       POSTGRES_DB: uptimemonitor
     volumes:
       - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U monitor -d uptimemonitor"]
       interval: 5s
       timeout: 3s
       retries: 10
+    networks:
+      - backend-net
 
   redis:
     image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
-  
+    networks:
+      - backend-net
+
   api:
     build: ./backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       DATABASE_URL: postgresql+psycopg://monitor:${POSTGRES_PASSWORD}@db:5432/uptimemonitor
       REDIS_URL: redis://redis:6379/0?socket_timeout=15
@@ -38,7 +47,17 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.2'
+          memory: 128M
+    networks:
+      - frontend-net
+      - backend-net
 
   scheduler:
     build: ./backend
@@ -53,7 +72,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
     restart: unless-stopped
+    networks:
+      - backend-net
 
   worker:
     build: ./backend
@@ -68,8 +94,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
     restart: unless-stopped
-  
+    networks:
+      - backend-net
+
   frontend:
     build: ./frontend
     ports:
@@ -83,11 +116,27 @@ services:
       timeout: 3s
       retries: 3
     restart: unless-stopped
+    networks:
+      - frontend-net
 
   webhook-receiver:
     build: ./backend
     command: ["python", "dev/dev_receiver.py"]
-    profiles: ["dev"]
+    profiles: [dev]
+    environment:
+      DATABASE_URL: postgresql+psycopg://monitor:${POSTGRES_PASSWORD}@db:5432/uptimemonitor
+      REDIS_URL: redis://redis:6379/0?socket_timeout=15
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+      ALERT_ALLOW_PRIVATE: ${ALERT_ALLOW_PRIVATE:-false}
+    networks:
+      - backend-net
+
+networks:
+  frontend-net:
+    driver: bridge
+  backend-net:
+    driver: bridge
+    internal: true
 
 volumes:
   db-data:

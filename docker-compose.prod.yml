@@ -1,0 +1,46 @@
+# docker-compose.prod.yml (production override)
+# Use: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+# Or: docker compose up --profile all (if base has profiles: [all])
+
+services:
+  # Production: remove development-only services
+  # (webhook-receiver is already profiles: [dev] in base, so it's excluded)
+
+  # Production: optimize resource reservations
+  api:
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.2'
+          memory: 128M
+
+  scheduler:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  worker:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
+  # Production: tighten network exposure
+  frontend:
+    # Ensure only same-origin /api/status is proxied
+    # (nginx.conf already handles this; no changes needed here)
+
+  # Production: use stable image tags (ensure Dockerfiles don't use :latest)
+  # Already enforced by base compose pinning specific versions

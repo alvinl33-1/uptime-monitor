@@ -1,0 +1,5 @@
+services:
+  webhook-receiver:
+    build: ./backend
+    command: ["python", "dev/dev_receiver.py"]
+    profiles: ["dev"]

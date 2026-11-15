@@ -1,0 +1,30 @@
+# docker-compose.override.yml (development only - auto-loaded by docker compose)
+# This file adds development-oriented settings on top of the base docker-compose.yml.
+# Services defined in the base file can have their properties overridden here.
+
+services:
+  api:
+    environment:
+      - DEBUG=true
+    volumes:
+      - ./backend:/app:cached
+      - ./backend/app:/app/app:cached
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  worker:
+    environment:
+      - DEBUG=true
+    volumes:
+      - ./backend:/app:cached
+
+  scheduler:
+    environment:
+      - DEBUG=true
+    volumes:
+      - ./backend:/app:cached
+
+  # Development: allow host port exposure for inspector tools (localhost only)
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"
