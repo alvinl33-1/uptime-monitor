@@ -11,6 +11,7 @@ from .db import engine, get_db
 from .models import Base, Incident, Monitor, Check
 from .checker import check_url
 from . import statuspage
+from .checks import record_check
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -141,10 +142,7 @@ def run_check(monitor_id: int, db: Session = Depends(get_db)):
 
     result = check_url(monitor.url)
 
-    check = Check(monitor_id=monitor.id, **result)
-    db.add(check)
-    db.commit()
-    db.refresh(check)
+    check = record_check(db, monitor, result)
     return check
 
 

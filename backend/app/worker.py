@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from . import jobs
 from .checker import check_url
+from .checks import record_check
 from .db import SessionLocal
 from .models import Check, Monitor
 
@@ -22,9 +23,7 @@ def process_monitor(monitor_id: int, db) -> bool:
         return False
 
     result = check_url(monitor.url)
-    check = Check(monitor_id=monitor.id, **result)
-    db.add(check)
-    db.commit()
+    record_check(db, monitor, result)
     log.info(
         "checked monitor %s: status=%s status_code=%s",
         monitor.id,
