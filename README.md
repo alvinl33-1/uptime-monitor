@@ -13,7 +13,7 @@ A self-hosted website monitoring project built with FastAPI, PostgreSQL, Redis, 
 - Calculate 24-hour uptime and include current monitor states and open incidents in the status document.
 - Include incident evaluation and webhook delivery/retry modules, with unit tests.
 
-> **Implementation note:** Incident evaluation and webhook delivery are implemented as backend modules, but the current worker does not yet call them after saving a check. Automatic incident creation/resolution and webhook delivery are therefore not active in the Compose workflow yet.
+> **Implementation note:** Scheduled and manual checks now share one backend service that saves the check, evaluates incident transitions, invalidates the public status cache, and attempts the corresponding webhook alert. The existing retry-window module is implemented and tested, but its scheduler integration and retry backoff are still future work.
 
 ## Architecture
 
@@ -98,7 +98,7 @@ Compose reads these values from the project `.env` file or the shell environment
 | Variable | Default / requirement | Purpose |
 |---|---|---|
 | `POSTGRES_PASSWORD` | Required | Password for the Compose PostgreSQL user. |
-| `ALERT_WEBHOOK_URL` | Empty | Webhook destination used by the alert module when alert delivery is connected to the check flow. |
+| `ALERT_WEBHOOK_URL` | Empty | Webhook destination used for incident-opened and incident-resolved alerts. |
 | `ALERT_ALLOW_PRIVATE` | `false` | Allows private webhook destinations when set to `true`; intended for local development. |
 
 The backend also reads `DATABASE_URL` and `REDIS_URL`, which Compose sets for its services. The status cache reads `STATUS_CACHE_SECONDS` (default 15 seconds); it can be set in the backend service environment if needed. Do not commit `.env` or real webhook credentials.
@@ -155,7 +155,7 @@ Tables are created at API startup; schema migrations are not configured yet. Pos
 
 ## Current limitations
 
-- The worker currently saves check results but does not invoke incident evaluation or webhook delivery. Those modules are implemented and tested separately.
+- Alert retry scanning is not yet wired into the scheduler and does not yet have exponential backoff; a failed immediate delivery is left eligible for the existing retry-window function.
 - A job can be lost if a worker stops after taking it from Redis; the next scheduled check eventually covers the gap.
 - DNS rebinding is not fully prevented because the connection is not pinned to the validated IP address.
 - The API has no authentication or rate limiting and should not be exposed publicly without additional protections.
@@ -166,8 +166,8 @@ Tables are created at API startup; schema migrations are not configured yet. Pos
 - [x] PostgreSQL, Docker Compose, monitor API, and automated tests
 - [x] Safe URL checker and Redis-backed scheduler/worker queue
 - [x] Status API, Redis caching, and React status page
-- [x] Incident rules and webhook alert/retry modules (integration into the worker flow remains)
-- [ ] Connect incident evaluation and webhook retries to check processing
+- [x] Incident evaluation and immediate webhook delivery integrated into scheduled and manual check processing
+- [ ] Run webhook retry-window processing from a dedicated scheduler/alert loop with bounded backoff
 - [ ] CI with GitHub Actions
 - [ ] Cloud deployment with Terraform
 - [ ] Kubernetes deployment and observability
