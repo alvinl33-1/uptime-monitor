@@ -1,6 +1,6 @@
 import type { OverallState, StatusResponse } from "./types";
 
-export const API_BASE = "/api"
+export const API_BASE = "/api";
 
 
 /**
@@ -17,16 +17,19 @@ export const API_BASE = "/api"
  * - Return the parsed data typed as StatusResponse.
  */
 export async function fetchStatus(signal?: AbortSignal): Promise<StatusResponse> {
-  const response = await fetch(`${API_BASE}/status`, { signal });
+  const response = await fetch(`${API_BASE}/status`, {
+    headers: { Accept: "application/json" },
+    signal,
+  });
   if (!response.ok) {
     throw new Error(`Failed to fetch status: ${response.status}`);
-  } else {
-    const data = await response.json();
-    if (typeof data !== "object" || typeof data.overall !== "string" || !Array.isArray(data.monitors)) {
-      return Promise.reject(new Error("Unexpected response"));  
-    }
-    return data as StatusResponse;
   }
+
+  const data = await response.json();
+  if (data === null || typeof data !== "object" || typeof data.overall !== "string" || !Array.isArray(data.monitors)) {
+    throw new Error("Unexpected response");
+  }
+  return data as StatusResponse;
 }
 
 

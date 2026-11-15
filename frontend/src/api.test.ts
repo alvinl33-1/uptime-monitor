@@ -26,7 +26,11 @@ describe("fetchStatus", () => {
     // Assert the fake fetch was called with "/api/status" as its first argument.
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(GOOD));
     vi.stubGlobal("fetch", fetchMock);
-    await expect(fetchStatus()).toHaveBeenCalledWith("/api/status", expect.anything());
+    await fetchStatus();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/status",
+      expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
   });
 
   it("passes the abort signal through", async () => {
@@ -35,7 +39,8 @@ describe("fetchStatus", () => {
     const controller = new AbortController();
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(GOOD));
     vi.stubGlobal("fetch", fetchMock);
-    await expect(fetchStatus(controller.signal)).toHaveBeenCalledWith(
+    await fetchStatus(controller.signal);
+    expect(fetchMock).toHaveBeenCalledWith(
       expect.anything(), expect.objectContaining({ signal: controller.signal })
     );
   });
