@@ -11,9 +11,9 @@ A self-hosted website monitoring project built with FastAPI, PostgreSQL, Redis, 
 - Queue checks in Redis and run them in independently scalable worker containers.
 - Provide a cached, read-only status document and a React page that polls it every 30 seconds.
 - Calculate 24-hour uptime and include current monitor states and open incidents in the status document.
-- Include incident evaluation and webhook delivery/retry modules, with unit tests.
+- Retry failed webhook alerts every 60 seconds for up to 24 hours, without delaying checks.
 
-> **Implementation note:** Scheduled and manual checks now share one backend service that saves the check, evaluates incident transitions, invalidates the public status cache, and attempts the corresponding webhook alert. The existing retry-window module is implemented and tested, but its scheduler integration and retry backoff are still future work.
+> **Implementation note:** Scheduled and manual checks share one backend service that saves the check, evaluates incident transitions, invalidates the public status cache, and attempts the corresponding webhook alert. The scheduler retries failed alerts independently every 60 seconds within the existing 24-hour retry window.
 
 ## Architecture
 
@@ -71,7 +71,7 @@ docker compose logs -f scheduler worker
 |---|---|---|
 | `frontend` | React status page served by Nginx | `http://127.0.0.1:3000` |
 | `api` | FastAPI monitor, check, incident, health, and status endpoints | `http://127.0.0.1:8000` |
-| `scheduler` | Finds monitors due for a check and enqueues jobs | Internal |
+| `scheduler` | Enqueues due checks and retries pending webhook alerts | Internal |
 | `worker` | Checks target URLs and saves results | Internal; can be scaled |
 | `db` | PostgreSQL 17 data store | Internal |
 | `redis` | Job queue and status cache | Internal |
@@ -132,6 +132,25 @@ docker compose build api
 docker compose run --rm --no-deps api pytest
 ```
 
+`backend/requirements.in` contains the direct dependencies. Its fully resolved
+`backend/requirements.txt` lock is used by local containers and CI so each
+environment installs the same versions.
+
+## Database migrations
+
+Alembic owns the database schema. The Compose `migrate` service runs
+`alembic upgrade head` after PostgreSQL is healthy and before the API,
+scheduler, and worker start. For an existing database that was created before
+migrations were added, first record that it already matches the initial schema:
+
+```bash
+docker compose run --rm migrate alembic -c alembic.ini stamp 20261116_01
+```
+
+Only stamp a database after confirming it matches the initial schema. Future
+schema changes should add a reviewed Alembic revision, then run
+`alembic upgrade head` as a release step before application containers start.
+
 Frontend development and checks:
 
 ```bash
@@ -151,15 +170,15 @@ The development webhook receiver can be started with the `dev` Compose profile. 
 - **Checks:** monitor, `up`/`down` status, status code, response time, error, and check time.
 - **Incidents:** monitor, start and resolution times, and alert-delivery timestamps.
 
-Tables are created at API startup; schema migrations are not configured yet. PostgreSQL data is stored in the `db-data` named volume. Redis has no persistent volume, so queued jobs and cached status are lost when Redis is recreated.
+Alembic migrations create and evolve the PostgreSQL schema. PostgreSQL data is stored in the `db-data` named volume. Redis has no persistent volume, so queued jobs and cached status are lost when Redis is recreated.
 
 ## Current limitations
 
-- Alert retry scanning is not yet wired into the scheduler and does not yet have exponential backoff; a failed immediate delivery is left eligible for the existing retry-window function.
+- Webhook retries use a 24-hour retry window and fixed 60-second cadence; exponential backoff is not configured.
 - A job can be lost if a worker stops after taking it from Redis; the next scheduled check eventually covers the gap.
 - DNS rebinding is not fully prevented because the connection is not pinned to the validated IP address.
 - The API has no authentication or rate limiting and should not be exposed publicly without additional protections.
-- TLS, production secrets management, database backups, and schema migrations are not configured.
+- TLS, production secrets management, and database backups are not configured.
 
 ## Roadmap
 
@@ -167,8 +186,9 @@ Tables are created at API startup; schema migrations are not configured yet. Pos
 - [x] Safe URL checker and Redis-backed scheduler/worker queue
 - [x] Status API, Redis caching, and React status page
 - [x] Incident evaluation and immediate webhook delivery integrated into scheduled and manual check processing
-- [ ] Run webhook retry-window processing from a dedicated scheduler/alert loop with bounded backoff
-- [ ] CI with GitHub Actions
+- [x] Run bounded webhook retry-window processing from the scheduler
+- [x] CI with GitHub Actions
+- [ ] Add exponential backoff to webhook retries
 - [ ] Cloud deployment with Terraform
 - [ ] Kubernetes deployment and observability
 - [ ] Production hardening: TLS, authentication, secrets, backups, and rate limiting
