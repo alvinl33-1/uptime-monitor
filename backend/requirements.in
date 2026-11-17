@@ -9,5 +9,6 @@ httpx
 redis
 fakeredis
 msgpack==1.2.4
+pip==26.3
 setuptools==84.2.1
 urllib3==2.8.0
