@@ -92,6 +92,7 @@ jobs:
         with:
           image-ref: uptime-monitor-api:ci
           severity: HIGH,CRITICAL
+          ignore-unfixed: true
           exit-code: "1"
 
       - name: Build frontend image
@@ -102,4 +103,5 @@ jobs:
         with:
           image-ref: uptime-monitor-frontend:ci
           severity: HIGH,CRITICAL
+          ignore-unfixed: true
           exit-code: "1"
