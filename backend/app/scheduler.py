@@ -5,13 +5,14 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from . import jobs
+from . import alerts, jobs
 from .db import SessionLocal
 from .models import Check, Monitor
 
 log = logging.getLogger("scheduler")
 
 POLL_SECONDS = 5
+ALERT_RETRY_SECONDS = 60
 
 
 def find_due_monitors(db: Session, now: datetime) -> list[Monitor]:
@@ -97,7 +98,24 @@ def run_once(db: Session, now: datetime | None = None) -> int:
     return count
 
 
-def run_forever(poll_seconds: int = POLL_SECONDS) -> None:
+def run_alert_retries(db_factory=None) -> int:
+    """Run one bounded alert retry pass outside the check-processing path."""
+    factory = db_factory or SessionLocal
+    if factory is None:
+        raise RuntimeError("DATABASE_URL is not configured")
+
+    with factory() as db:
+        count = alerts.retry_pending(db)
+
+    if count > 0:
+        log.info("alert retry pass sent %s alerts", count)
+    return count
+
+
+def run_forever(
+    poll_seconds: int = POLL_SECONDS,
+    alert_retry_seconds: int = ALERT_RETRY_SECONDS,
+) -> None:
     """
     Run run_once in a loop until told to stop.
 
@@ -125,8 +143,18 @@ def run_forever(poll_seconds: int = POLL_SECONDS) -> None:
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
 
+    next_alert_retry = 0.0
+
     log.info("scheduler started")
     while not stop["requested"]:
+        now = time.monotonic()
+        if now >= next_alert_retry:
+            try:
+                run_alert_retries()
+            except Exception:
+                log.exception("error in alert retry pass")
+            next_alert_retry = now + alert_retry_seconds
+
         try:
             with SessionLocal() as db:
                 run_once(db)

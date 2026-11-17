@@ -104,3 +104,16 @@ def test_run_once_with_no_monitors_returns_zero(db_session):
     count = scheduler.run_once(db_session, NOW)
     assert count == 0
     assert jobs.queue_length() == 0
+
+
+def test_run_alert_retries_uses_the_shared_retry_service(db_session, monkeypatch):
+    calls = []
+
+    def fake_retry(retry_db):
+        calls.append(retry_db)
+        return 2
+
+    monkeypatch.setattr(scheduler.alerts, "retry_pending", fake_retry)
+
+    assert scheduler.run_alert_retries(lambda: db_session) == 2
+    assert calls == [db_session]
