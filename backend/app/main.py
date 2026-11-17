@@ -1,4 +1,3 @@
-from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -8,18 +7,12 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .db import engine, get_db
-from .models import Base, Incident, Monitor, Check
+from .models import Incident, Monitor, Check
 from .checker import check_url
 from . import statuspage
 from .checks import record_check
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    if engine is not None:
-        Base.metadata.create_all(engine)
-    yield
-
-app = FastAPI(title="Uptime Monitor", lifespan=lifespan)
+app = FastAPI(title="Uptime Monitor")
 
 class MonitorCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)

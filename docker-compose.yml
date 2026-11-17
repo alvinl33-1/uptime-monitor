@@ -30,6 +30,17 @@ services:
     networks:
       - backend-net
 
+  migrate:
+    build: ./backend
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://monitor:${POSTGRES_PASSWORD}@db:5432/uptimemonitor
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend-net
+
   api:
     build: ./backend
     ports:
@@ -42,6 +53,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
@@ -72,6 +85,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:
@@ -94,6 +109,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:
