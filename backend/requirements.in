@@ -1,0 +1,10 @@
+# Direct application and test dependencies. Regenerate requirements.txt after
+# changing this file so local, CI, and container installs use the same versions.
+fastapi==0.162.0
+uvicorn==0.54.0
+sqlalchemy
+psycopg[binary]
+pytest
+httpx
+redis
+fakeredis
