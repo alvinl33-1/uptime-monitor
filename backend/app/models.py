@@ -31,7 +31,7 @@ class Check(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     monitor_id: Mapped[int] = mapped_column(ForeignKey("monitors.id"))
-    status: Mapped[str] = mapped_column(str(10))
+    status: Mapped[str] = mapped_column(String(10))
     status_code: Mapped[int | None]
     response_time_ms: Mapped[int]
     error: Mapped[str | None] = mapped_column(String(200))
