@@ -1,32 +1,37 @@
-# React + TypeScript + Vite
+# Uptime Monitor status page
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The public, read-only status page for Uptime Monitor, built with React 19, TypeScript, and Vite. See the [root README](../README.md) for the full system.
 
-Currently, two official plugins are available:
+## What it does
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Fetches `GET /api/status` (same origin) and polls it every 30 seconds (`POLL_MS` in `src/useStatus.ts`). The API caches the status document for 15 seconds.
+- Renders the overall state, summary metrics, monitor cards, and open incidents, plus loading, unavailable, and stale-data states. When a refresh fails, the last good data stays on screen.
+- Never requests or displays monitor URLs. The public contract is `StatusResponse` in `src/types.ts`.
 
-## React Compiler
+## Layout
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Path | Purpose |
+|---|---|
+| `src/App.tsx` | Page composition |
+| `src/api.tsx` | Fetches and validates the status response; rejects malformed data and tolerates unknown overall states |
+| `src/useStatus.ts` | Polling hook; aborts in-flight requests on cleanup |
+| `src/types.ts` | TypeScript models for the status contract |
+| `src/format.ts` | Shared formatting for counts, uptime, response time, and local timestamps |
+| `src/index.css` | Design tokens, status colors, light/dark mode, responsive layout, reduced motion |
+| `nginx.conf` | Production server on port 8080; proxies only `GET /api/status` to the API and returns 404 for other `/api/` paths |
 
-## Expanding the Oxlint configuration
+## Commands
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm ci          # install exact locked dependencies
+npm run dev     # Vite dev server
+npm test        # Vitest
+npm run lint    # Oxlint
+npm run build   # type-check and production build to dist/
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+The Vite dev server has no `/api` proxy configured, so `npm run dev` on its own shows the unavailable state. To see live data, run the full stack with `docker compose up -d --build` from the repository root and open <http://127.0.0.1:3000>.
+
+## Conventions
+
+Keep the existing text-first visual style: no emojis, decorative icons, or component libraries. Reuse `format.ts` and the CSS variables, and maintain visible keyboard focus, readable contrast in both themes, and layouts that work at narrow widths.
