@@ -9,7 +9,7 @@ also says: no Terraform or Kubernetes yet — use Bicep + Container Apps.
 |---|---|---|---|---|
 | `frontend` (Nginx + React) | Container app `frontend` | **external**, HTTPS by ACA | 0–2 | Change `proxy_pass http://api:8000/status;` to `http://api/status;` (internal ingress listens on 80). Only `/api/status` is proxied — keep it that way. |
 | `api` (FastAPI, port 8000) | Container app `api` | **internal only** | 1–3 | Management endpoints have no auth (see `AGENTS.md`). Never make this external until auth + rate limits exist. Probes: liveness `/health`, readiness `/health/db`. |
-| `scheduler` | Container app `scheduler` | none | exactly 1 | Command `python -m app.scheduler`. Redis TTL claims already prevent double-enqueueing. |
+| `scheduler` | Container app `scheduler` | none | exactly 1 | Command `python -m app.scheduler`. Redis TTL claims already prevent double-enqueueing. It also runs the 60-second webhook retry pass, so it needs `ALERT_WEBHOOK_URL` and outbound HTTPS, like the worker. |
 | `worker` | Container app `worker` | none | 0–5 | Command `python -m app.worker`. KEDA `redis` scale rule on list `checks:queue`. Remember `BLPOP` can lose a job if a replica dies mid-check (known gap in `AGENTS.md`). |
 | `migrate` | Container Apps job `migrate` | — | manual | Command `alembic -c alembic.ini upgrade head`. CI runs it before updating the apps. |
 | `db` (postgres:17) | PostgreSQL Flexible Server 17 | private/firewalled | — | Entra auth via managed identity; see `python-azure-runtime`. Database `uptimemonitor`. |

@@ -1,6 +1,6 @@
 # Uptime Monitor
 
-A self-hosted website monitoring project built with FastAPI, PostgreSQL, Redis, and React. It includes a monitor management API, a background check queue, incident and webhook support modules, and a read-only public status page. This is a learning project and is not intended as a production monitoring service.
+A self-hosted website monitoring project built with FastAPI, PostgreSQL, Redis, and React. It includes a monitor management API, a background check queue, incident tracking with webhook alerts, versioned database migrations, and a read-only public status page. This is a learning project and is not intended as a production monitoring service.
 
 ## Features
 
@@ -11,7 +11,9 @@ A self-hosted website monitoring project built with FastAPI, PostgreSQL, Redis, 
 - Queue checks in Redis and run them in independently scalable worker containers.
 - Provide a cached, read-only status document and a React page that polls it every 30 seconds.
 - Calculate 24-hour uptime and include current monitor states and open incidents in the status document.
-- Retry failed webhook alerts every 60 seconds for up to 24 hours, without delaying checks.
+- Open an incident after three consecutive failed checks and resolve it on the next successful check.
+- Send webhook alerts when incidents open and resolve, and retry failed alerts every 60 seconds for up to 24 hours without delaying checks.
+- Manage the PostgreSQL schema with Alembic migrations that run before the application services start.
 
 > **Implementation note:** Scheduled and manual checks share one backend service that saves the check, evaluates incident transitions, invalidates the public status cache, and attempts the corresponding webhook alert. The scheduler retries failed alerts independently every 60 seconds within the existing 24-hour retry window.
 
@@ -22,15 +24,18 @@ flowchart LR
     Browser([Browser]) -->|:3000| Frontend[React status page / Nginx]
     Frontend -->|/api/status| API[FastAPI]
     User([API client]) -->|:8000| API
+    Migrate[Migrate job] -->|alembic upgrade head| DB
     API --> DB[(PostgreSQL)]
     Scheduler[Scheduler] -->|due checks| DB
     Scheduler -->|enqueue| Redis[(Redis)]
+    Scheduler -->|retry pending alerts| Webhook([Webhook endpoint])
     Redis --> Worker[Worker x N]
     Worker -->|safe HTTP check| Sites([Monitored sites])
-    Worker -->|save check| DB
+    Worker -->|save check, incidents| DB
+    Worker -->|incident alerts| Webhook
 ```
 
-The API, scheduler, and worker use the same backend image with different start commands. The scheduler polls every five seconds and uses Redis keys to avoid enqueueing the same monitor repeatedly. Workers consume jobs from a Redis list. The frontend's Nginx proxy exposes only `GET /api/status`; monitor management remains available directly through the API on port 8000.
+The migrate job, API, scheduler, and worker use the same backend image with different start commands. On `docker compose up`, the one-shot `migrate` service applies Alembic migrations after PostgreSQL is healthy, and the API, scheduler, and worker wait for it to finish successfully. The scheduler polls every five seconds and uses Redis keys to avoid enqueueing the same monitor repeatedly. Once a minute, it also retries webhook alerts that previously failed, in a separate step from check scheduling. Workers consume jobs from a Redis list, save results, update incidents, and send the immediate alert. The frontend's Nginx proxy exposes only `GET /api/status`; monitor management remains available directly through the API on port 8000.
 
 ## Quick start
 
@@ -69,7 +74,8 @@ docker compose logs -f scheduler worker
 
 | Service | Purpose | Host access |
 |---|---|---|
-| `frontend` | React status page served by Nginx | `http://127.0.0.1:3000` |
+| `migrate` | Runs `alembic upgrade head`, then exits | One-shot |
+| `frontend` | React status page served by Nginx | `http://127.0.0.1:3000` (published on all host interfaces) |
 | `api` | FastAPI monitor, check, incident, health, and status endpoints | `http://127.0.0.1:8000` |
 | `scheduler` | Enqueues due checks and retries pending webhook alerts | Internal |
 | `worker` | Checks target URLs and saves results | Internal; can be scaled |
@@ -90,6 +96,15 @@ Stop the services while keeping database data, or remove the database volume too
 docker compose down
 docker compose down -v
 ```
+
+### Compose files
+
+| File | When it applies | What it changes |
+|---|---|---|
+| `docker-compose.yml` | Always | Base services, health checks, networks, and resource limits. |
+| `docker-compose.override.yml` | Loaded automatically by a plain `docker compose` command | Development settings: bind-mounts `./backend` into the API, scheduler, and worker so code changes don't require rebuilding the image. |
+| `docker-compose.dev.yml` | Only when passed with `-f` | Extra definition for the development webhook receiver. |
+| `docker-compose.prod.yml` | `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` | Skips the development override and adds resource reservations. This is not a complete production deployment; see [Current limitations](#current-limitations). |
 
 ## Configuration
 
@@ -121,7 +136,7 @@ Interactive schemas and examples are available at `/docs`.
 | `GET` | `/incidents` | List incidents (`open_only`, `limit`) |
 | `GET` | `/monitors/{id}/incidents` | List incidents for one monitor |
 
-The public status document contains the overall state, per-monitor state, 24-hour uptime, latest response time and check time, and currently open incidents. The current frontend displays the overall state and monitor/incident counts, and requests data through its same-origin `/api/status` route. The Nginx configuration returns 404 for other `/api/` paths.
+The public status document contains the overall state, per-monitor state, 24-hour uptime, latest response time and check time, and currently open incidents. The frontend shows the overall state, summary metrics, a card for each monitor, and open incidents. It also has loading, unavailable, and stale-data states, and keeps the last good data when a refresh fails. It requests data through its same-origin `/api/status` route. The Nginx configuration returns 404 for other `/api/` paths.
 
 ## Development and tests
 
@@ -136,9 +151,29 @@ docker compose run --rm --no-deps api pytest
 `backend/requirements.txt` lock is used by local containers and CI so each
 environment installs the same versions.
 
+Frontend development and checks:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+npm test
+npm run build
+npm run lint
+```
+
+The development webhook receiver runs under the `dev` Compose profile:
+
+```bash
+docker compose --profile dev up -d webhook-receiver
+docker compose logs -f webhook-receiver
+```
+
+It listens on port 9000 inside the Compose network and prints the payloads it receives. To send alerts to it locally, set `ALERT_WEBHOOK_URL=http://webhook-receiver:9000` and `ALERT_ALLOW_PRIVATE=true` in `.env`. To make it return HTTP 500 and exercise retries, create `/tmp/fail` inside its container.
+
 ## Database migrations
 
-Alembic owns the database schema. The Compose `migrate` service runs
+Alembic owns the database schema. Revisions live in `backend/alembic/versions/`. The Compose `migrate` service runs
 `alembic upgrade head` after PostgreSQL is healthy and before the API,
 scheduler, and worker start. For an existing database that was created before
 migrations were added, first record that it already matches the initial schema:
@@ -151,18 +186,27 @@ Only stamp a database after confirming it matches the initial schema. Future
 schema changes should add a reviewed Alembic revision, then run
 `alembic upgrade head` as a release step before application containers start.
 
-Frontend development and checks:
+## Continuous integration
 
-```bash
-cd frontend
-npm ci
-npm run dev
-npm test
-npm run build
-npm run lint
-```
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
 
-The development webhook receiver can be started with the `dev` Compose profile. The receiver listens on port 9000 inside the Compose network and prints received payloads. It can be made to return HTTP 500 by creating `/tmp/fail` inside its container.
+| Job | Checks |
+|---|---|
+| Backend tests | Python 3.14, `pytest`, and `pip-audit` against `backend/requirements.txt` |
+| Frontend checks | Node 24, `npm audit --audit-level=high`, `npm test`, `npm run lint`, and `npm run build` |
+| Build container images | Builds the backend and frontend images and fails on fixable HIGH or CRITICAL Trivy findings; runs after the other two jobs pass |
+
+Third-party actions are pinned to commit SHAs, and the workflow has read-only repository permissions. CI does not deploy anything.
+
+## Agent skills
+
+The repository includes agent skills for the Azure deployment work. They live in one folder, `.agents/skills/`, and are linked for each tool:
+
+- `.agents/skills/`: the real files (read by Codex)
+- `.claude/skills`: symlink for Claude Code
+- `.github/skills`: symlink for GitHub Copilot
+
+Add, edit, or remove skills only in `.agents/skills/`. [`.agents/SKILLS.md`](.agents/SKILLS.md) lists each skill and when to use it. Project-level guidance for coding agents is in [`AGENTS.md`](AGENTS.md).
 
 ## Data model
 
@@ -187,12 +231,13 @@ Alembic migrations create and evolve the PostgreSQL schema. PostgreSQL data is s
 - [x] Status API, Redis caching, and React status page
 - [x] Incident evaluation and immediate webhook delivery integrated into scheduled and manual check processing
 - [x] Run bounded webhook retry-window processing from the scheduler
+- [x] Versioned schema migrations with Alembic
 - [x] CI with GitHub Actions
 - [ ] Add exponential backoff to webhook retries
-- [ ] Cloud deployment with Terraform
-- [ ] Kubernetes deployment and observability
-- [ ] Production hardening: TLS, authentication, secrets, backups, and rate limiting
+- [ ] Reliable local workflow: health checks, useful logs, and documented manual verification
+- [ ] Azure deployment target: Azure Container Apps with managed PostgreSQL and Redis, Key Vault secrets, HTTPS, health probes, and logs
+- [ ] Deployment hardening: authentication for management endpoints, rate limits, backups, and observability
 
 ## Tech stack
 
-Python 3.14, FastAPI, SQLAlchemy, PostgreSQL 17, Redis 7, httpx, pytest, React 19, TypeScript, Vite, Vitest, Nginx, Docker, and Docker Compose.
+Python 3.14, FastAPI, SQLAlchemy, Alembic, PostgreSQL 17, Redis 7, httpx, pytest, React 19, TypeScript, Vite, Vitest, Nginx, Docker, Docker Compose, and GitHub Actions.
