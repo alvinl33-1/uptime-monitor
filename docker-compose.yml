@@ -95,6 +95,7 @@ services:
     restart: unless-stopped
     networks:
       - backend-net
+      - egress-net
 
   worker:
     build: ./backend
@@ -119,6 +120,7 @@ services:
     restart: unless-stopped
     networks:
       - backend-net
+      - egress-net
 
   frontend:
     build: ./frontend
@@ -154,6 +156,10 @@ networks:
   backend-net:
     driver: bridge
     internal: true
+  # Outbound internet for monitored-site checks (worker) and webhook alerts
+  # (worker, scheduler). SSRF policy is enforced in checker.py and alerts.py.
+  egress-net:
+    driver: bridge
 
 volumes:
   db-data:

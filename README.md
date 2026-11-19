@@ -236,7 +236,8 @@ Alembic migrations create and evolve the PostgreSQL schema. PostgreSQL data is s
 - [ ] Add exponential backoff to webhook retries
 - [ ] Reliable local workflow: health checks, useful logs, and documented manual verification
 - [ ] Azure deployment target: Azure Container Apps with managed PostgreSQL and Redis, Key Vault secrets, HTTPS, health probes, and logs
-- [ ] Deployment hardening: authentication for management endpoints, rate limits, backups, and observability
+- [ ] Accounts and authentication: monitors owned by a user and visible only to that user, plus per-account status pages ([plan](docs/plans/accounts-and-auth.md))
+- [ ] Deployment hardening: rate limits, backups, and observability
 
 ## Tech stack
 
